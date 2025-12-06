@@ -74,12 +74,22 @@ llama_load_model(const char *model_path, int32_t is_embedding)
     // コンテキストパラメータを設定
     llama_context_params ctx_params = llama_context_default_params();
     ctx_params.embeddings = (is_embedding != 0);
-    ctx_params.n_ctx = 32;     // かなり小さめのコンテキスト
-    ctx_params.n_batch = 64;   // バッチも控えめ
-    ctx_params.n_seq_max = 10; // 最大シーケンス数を10に設定
-    ctx_params.n_ubatch = 10;
-    ctx_params.n_threads = 4;
-    ctx_params.n_threads_batch = 4;
+    if (is_embedding)
+    {
+        ctx_params.n_ctx = 32;
+        ctx_params.n_batch = 128;
+        ctx_params.n_ubatch = 128; // NOTE: n_ubatch > (入力トークン数)じゃないとエラーになる
+        ctx_params.n_threads = 4;
+        ctx_params.n_threads_batch = 4;
+    }
+    else
+    {
+        ctx_params.n_ctx = 32;
+        ctx_params.n_batch = 128;
+        ctx_params.n_ubatch = 128;
+        ctx_params.n_threads = 4;
+        ctx_params.n_threads_batch = 4;
+    }
 
     fprintf(stderr,
             "[llama_bridge] llama_context_default_params: embeddings=%d, n_ctx=%d, n_batch=%d\n",
@@ -306,7 +316,8 @@ llama_embed_text(int32_t model_id, const char *text, float *out_buffer, int32_t 
     }
 
     llama_context *ctx = model_ctx.ctx;
-    const llama_vocab *vocab = llama_model_get_vocab(model_ctx.model);
+    llama_model *model = model_ctx.model;
+    const llama_vocab *vocab = llama_model_get_vocab(model);
 
     // テキストをトークナイズ（動的メモリ確保）
     std::vector<llama_token> tokens(max_tokens);
@@ -317,11 +328,14 @@ llama_embed_text(int32_t model_id, const char *text, float *out_buffer, int32_t 
         return LLAMA_BRIDGE_ERROR_EMBEDDING_FAILED;
     }
 
-    // バッチを作成してデコード
+    // バッチを作成
     llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
 
     // 埋め込みを有効にする
     llama_set_embeddings(ctx, true);
+
+    // 前回のKVキャッシュをクリア（埋め込み専用の推論なので毎回リセットしてOK）
+    llama_memory_clear(llama_get_memory(ctx), true);
 
     // デコード実行
     if (llama_decode(ctx, batch) < 0)
@@ -332,15 +346,28 @@ llama_embed_text(int32_t model_id, const char *text, float *out_buffer, int32_t 
 
     // llama_batch_free(batch);
 
-    // 埋め込みベクトルを取得
-    float *embeddings = llama_get_embeddings(ctx);
+    // プーリング方式に応じて埋め込みベクトルを取得
+    float *embeddings = nullptr;
+    enum llama_pooling_type pooling = llama_pooling_type(ctx);
+
+    if (pooling == LLAMA_POOLING_TYPE_NONE)
+    {
+        // トークンごとの埋め込み: 最後のトークンの埋め込みを使う
+        embeddings = llama_get_embeddings_ith(ctx, -1);
+    }
+    else
+    {
+        // プーリング済みのシーケンス埋め込み（mean / cls など）
+        embeddings = llama_get_embeddings_seq(ctx, 0);
+    }
+
     if (!embeddings)
     {
         return LLAMA_BRIDGE_ERROR_EMBEDDING_FAILED;
     }
 
     // 埋め込みの次元数を取得
-    int32_t n_embd = llama_model_n_embd(model_ctx.model);
+    int32_t n_embd = llama_model_n_embd(model);
 
     // バッファにコピー
     memcpy(out_buffer, embeddings, n_embd * sizeof(float));

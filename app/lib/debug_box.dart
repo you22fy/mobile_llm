@@ -9,7 +9,7 @@ class Debug {
   @Id()
   int id;
   final String text;
-  @HnswIndex(dimensions: 3)
+  @HnswIndex(dimensions: 3, distanceType: VectorDistanceType.cosine)
   @Property(type: PropertyType.floatVector)
   final List<double> embedding;
 }

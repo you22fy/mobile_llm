@@ -1,0 +1,1 @@
+/usr/bin/c++  -arch arm64 -dynamiclib -Wl,-headerpad_max_install_names -o libnative_add.dylib -install_name @rpath/libnative_add.dylib CMakeFiles/native_add.dir/ios/Classes/native_add.cpp.o

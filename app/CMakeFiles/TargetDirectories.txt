@@ -1,0 +1,3 @@
+/Users/you22fy/dev/private/mobile_llm/app/CMakeFiles/native_add.dir
+/Users/you22fy/dev/private/mobile_llm/app/CMakeFiles/edit_cache.dir
+/Users/you22fy/dev/private/mobile_llm/app/CMakeFiles/rebuild_cache.dir

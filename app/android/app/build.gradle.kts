@@ -19,6 +19,12 @@ android {
         jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
+  externalNativeBuild {
+    cmake {
+      path = file("CMakeLists.txt")
+    }
+  }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.app"
@@ -37,6 +43,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
 }
 
 flutter {

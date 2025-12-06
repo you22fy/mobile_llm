@@ -1,9 +1,11 @@
 {
   "cSpell.words": [
     "dtype",
+    "embeddinggemma",
     "GGUF",
     "libllama",
     "libnative",
+    "logits",
     "malloc",
     "outtype"
   ],

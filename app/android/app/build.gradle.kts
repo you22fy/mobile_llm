@@ -34,6 +34,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // arm64-v8aのみをサポート（llama.cppのNEON FP16命令が32bit ABIで利用できないため）
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {

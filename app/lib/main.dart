@@ -37,12 +37,21 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
+  void _reset() {
+    setState(() {
+      _nativeAddResult = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
+        actions: [
+          IconButton(onPressed: _reset, icon: const Icon(Icons.refresh)),
+        ],
       ),
       body: Center(
         child: Column(
@@ -53,6 +62,7 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: () => _nativeAdd(1, 2),
               child: const Text('Native Add'),
             ),
+            const Divider(),
           ],
         ),
       ),

@@ -1,12 +1,15 @@
 {
   "cSpell.words": [
+    "cupertino",
     "dtype",
     "embeddinggemma",
     "GGUF",
+    "Hnsw",
     "libllama",
     "libnative",
     "logits",
     "malloc",
+    "objectbox",
     "outtype",
     "ubatch"
   ],

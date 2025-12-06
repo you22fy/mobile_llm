@@ -3,3 +3,5 @@ llama.cpp/
 models/
 
 app/assets/
+
+.DS_Store

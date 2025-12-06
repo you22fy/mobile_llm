@@ -7,7 +7,8 @@
     "libnative",
     "logits",
     "malloc",
-    "outtype"
+    "outtype",
+    "ubatch"
   ],
   "files.associations": {
     "__bit_reference": "cpp",

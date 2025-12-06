@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:app/debug_box.dart';
 import 'package:app/natives/native_add.dart';
 import 'package:app/natives/llama.dart';
 import 'package:flutter/material.dart';
@@ -37,6 +38,47 @@ class _MyHomePageState extends State<MyHomePage> {
   int _nativeAddResult = 0;
   String _llmOutput = '';
   String _embeddingPreview = '';
+  String _debugSearchResult = '';
+
+  final DebugBox _debugBox = DebugBox();
+
+  Future<void> _runDebugSearch() async {
+    await _debugBox.init();
+    await _debugBox.insertSampleData();
+
+    try {
+      setState(() {
+        _debugSearchResult = 'Running ObjectBox debug search...';
+      });
+
+      // デモ用のクエリベクトル（[1.0, 2.0, 3.0] に近い点を検索）
+      final query = Debug(id: 1, text: 'query', embedding: [1.0, 1.0, 1.0]);
+
+      final results = await _debugBox.search(query: query, k: 2);
+
+      if (results.isEmpty) {
+        setState(() {
+          _debugSearchResult = 'No results.';
+        });
+        return;
+      }
+
+      final buffer = StringBuffer();
+      for (final r in results) {
+        buffer.writeln(
+          'id=${r.object.id}, text=${r.object.text}, score=${r.score.toStringAsFixed(4)}',
+        );
+      }
+
+      setState(() {
+        _debugSearchResult = buffer.toString();
+      });
+    } catch (e) {
+      setState(() {
+        _debugSearchResult = 'Debug search error: $e';
+      });
+    }
+  }
 
   void _nativeAdd(int a, int b) {
     setState(() {
@@ -49,6 +91,7 @@ class _MyHomePageState extends State<MyHomePage> {
       _nativeAddResult = 0;
       _llmOutput = '';
       _embeddingPreview = '';
+      _debugSearchResult = '';
     });
   }
 
@@ -180,6 +223,24 @@ class _MyHomePageState extends State<MyHomePage> {
                   _embeddingPreview.isEmpty
                       ? 'Embedding preview will appear here.'
                       : _embeddingPreview,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+
+              const Divider(height: 32),
+
+              // ---- ObjectBox Debug 検索デモ ----
+              ElevatedButton(
+                onPressed: _runDebugSearch,
+                child: const Text('Run ObjectBox Debug Search (top 2)'),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  _debugSearchResult.isEmpty
+                      ? 'Debug search results will appear here.'
+                      : _debugSearchResult,
                   textAlign: TextAlign.center,
                 ),
               ),

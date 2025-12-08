@@ -1,18 +1,8 @@
 import 'dart:io';
 
+import 'package:app/entity/debug.dart';
 import 'package:app/objectbox.g.dart';
 import 'package:path_provider/path_provider.dart';
-
-@Entity()
-class Debug {
-  Debug({required this.id, required this.text, required this.embedding});
-  @Id()
-  int id;
-  final String text;
-  @HnswIndex(dimensions: 3, distanceType: VectorDistanceType.cosine)
-  @Property(type: PropertyType.floatVector)
-  final List<double> embedding;
-}
 
 class DebugBox {
   late final Store store;

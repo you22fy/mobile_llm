@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:app/debug_box.dart';
+import 'package:app/entity/debug.dart';
 import 'package:app/natives/native_add.dart';
 import 'package:app/natives/llama.dart';
 import 'package:flutter/material.dart';

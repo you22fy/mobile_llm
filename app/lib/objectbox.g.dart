@@ -14,8 +14,8 @@ import 'package:objectbox/internal.dart'
 import 'package:objectbox/objectbox.dart' as obx;
 import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 
-import 'debug_box.dart';
-import 'knowledge_box.dart';
+import 'entity/debug.dart';
+import 'entity/knowledge.dart';
 
 export 'package:objectbox/objectbox.dart'; // so that callers only have to import this file
 
@@ -44,7 +44,7 @@ final _entities = <obx_int.ModelEntity>[
         type: 28,
         flags: 8,
         indexId: const obx_int.IdUid(3, 5343879432585865271),
-        hnswParams: obx_int.ModelHnswParams(dimensions: 768),
+        hnswParams: obx_int.ModelHnswParams(dimensions: 768, distanceType: 2),
       ),
     ],
     relations: <obx_int.ModelRelation>[],
@@ -74,7 +74,7 @@ final _entities = <obx_int.ModelEntity>[
         type: 28,
         flags: 8,
         indexId: const obx_int.IdUid(4, 500852027354353933),
-        hnswParams: obx_int.ModelHnswParams(dimensions: 3),
+        hnswParams: obx_int.ModelHnswParams(dimensions: 3, distanceType: 2),
       ),
     ],
     relations: <obx_int.ModelRelation>[],

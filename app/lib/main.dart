@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:app/debug_box.dart';
 import 'package:app/entity/debug.dart';
+import 'package:app/llm.dart';
 import 'package:app/natives/native_add.dart';
 import 'package:app/natives/llama.dart';
 import 'package:flutter/material.dart';
@@ -40,6 +41,12 @@ class _MyHomePageState extends State<MyHomePage> {
   String _llmOutput = '';
   String _embeddingPreview = '';
   String _debugSearchResult = '';
+  Llm _currentLlm = Llm.gemma270m;
+  EmbeddingModel _currentEmbeddingModel = EmbeddingModel.gemma300m;
+
+  final TextEditingController _llmInputController = TextEditingController();
+  final TextEditingController _embeddingInputController =
+      TextEditingController();
 
   final DebugBox _debugBox = DebugBox();
 
@@ -115,6 +122,18 @@ class _MyHomePageState extends State<MyHomePage> {
     return file.path;
   }
 
+  void _setLlm(Llm llm) {
+    setState(() {
+      _currentLlm = llm;
+    });
+  }
+
+  void _setEmbeddingModel(EmbeddingModel embeddingModel) {
+    setState(() {
+      _currentEmbeddingModel = embeddingModel;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -137,8 +156,24 @@ class _MyHomePageState extends State<MyHomePage> {
                 child: const Text('Native Add'),
               ),
               const Divider(height: 32),
+              DropdownButton<Llm>(
+                value: _currentLlm,
+                onChanged: (Llm? llm) => _setLlm(llm ?? Llm.gemma270m),
+                items: Llm.values
+                    .map(
+                      (Llm llm) => DropdownMenuItem(
+                        value: llm,
+                        child: Text(llm.displayName),
+                      ),
+                    )
+                    .toList(),
+              ),
 
               // ---- LLM 実行 ----
+              TextField(
+                controller: _llmInputController,
+                decoration: const InputDecoration(hintText: 'Enter prompt'),
+              ),
               ElevatedButton(
                 onPressed: () async {
                   try {
@@ -147,13 +182,13 @@ class _MyHomePageState extends State<MyHomePage> {
                     });
 
                     final modelPath = await _ensureModelCopied(
-                      'assets/artifacts/gemma-3-270M-BF16.gguf',
-                      'gemma-3-270M-BF16.gguf',
+                      _currentLlm.assetPath,
+                      '${_currentLlm.displayName}.gguf',
                     );
 
                     final model = await LlamaModel.load(modelPath);
                     final result = await model.generate(
-                      'Hello from Flutter!',
+                      _llmInputController.text,
                       maxTokens: 64,
                     );
                     await model.dispose();
@@ -167,7 +202,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     });
                   }
                 },
-                child: const Text('Run LLM (gemma-3-270M-BF16)'),
+                child: const Text('Run LLM'),
               ),
               const SizedBox(height: 8),
               Padding(
@@ -183,6 +218,25 @@ class _MyHomePageState extends State<MyHomePage> {
               const Divider(height: 32),
 
               // ---- Embedding 実行 ----
+              DropdownButton<EmbeddingModel>(
+                value: _currentEmbeddingModel,
+                onChanged: (EmbeddingModel? embeddingModel) =>
+                    _setEmbeddingModel(
+                      embeddingModel ?? EmbeddingModel.gemma300m,
+                    ),
+                items: EmbeddingModel.values
+                    .map(
+                      (EmbeddingModel embeddingModel) => DropdownMenuItem(
+                        value: embeddingModel,
+                        child: Text(embeddingModel.displayName),
+                      ),
+                    )
+                    .toList(),
+              ),
+              TextField(
+                controller: _embeddingInputController,
+                decoration: const InputDecoration(hintText: 'Enter text'),
+              ),
               ElevatedButton(
                 onPressed: () async {
                   try {
@@ -191,13 +245,13 @@ class _MyHomePageState extends State<MyHomePage> {
                     });
 
                     final modelPath = await _ensureModelCopied(
-                      'assets/artifacts/embeddinggemma-300M-F32.gguf',
-                      'embeddinggemma-300M-F32.gguf',
+                      _currentEmbeddingModel.assetPath,
+                      '${_currentEmbeddingModel.displayName}.gguf',
                     );
 
                     final embModel = await LlamaEmbeddingModel.load(modelPath);
                     final emb = await embModel.embed(
-                      'It is said that the world will end in 2025.',
+                      _embeddingInputController.text,
                     );
                     await embModel.dispose();
 
@@ -215,7 +269,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     });
                   }
                 },
-                child: const Text('Compute Embedding (first 8 dims)'),
+                child: const Text('Compute Embedding'),
               ),
               const SizedBox(height: 8),
               Padding(

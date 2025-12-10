@@ -11,6 +11,9 @@
     "malloc",
     "objectbox",
     "outtype",
+    "Qwen",
+    "tinyllama",
+    "tinyswallow",
     "ubatch"
   ],
   "files.associations": {

@@ -54,9 +54,43 @@
         }
       ],
       "relations": []
+    },
+    {
+      "id": "5:4928971987271453225",
+      "lastPropertyId": "5:6825210242188910810",
+      "name": "Chat",
+      "properties": [
+        {
+          "id": "1:4765647224588334242",
+          "name": "id",
+          "type": 6,
+          "flags": 1
+        },
+        {
+          "id": "2:8823602343662498657",
+          "name": "message",
+          "type": 9
+        },
+        {
+          "id": "3:6871824716491186039",
+          "name": "prompt",
+          "type": 9
+        },
+        {
+          "id": "4:6366584080122099278",
+          "name": "references",
+          "type": 30
+        },
+        {
+          "id": "5:6825210242188910810",
+          "name": "createdAt",
+          "type": 10
+        }
+      ],
+      "relations": []
     }
   ],
-  "lastEntityId": "4:7166730782826892657",
+  "lastEntityId": "5:4928971987271453225",
   "lastIndexId": "4:500852027354353933",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",

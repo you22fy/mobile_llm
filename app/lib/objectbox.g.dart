@@ -14,6 +14,7 @@ import 'package:objectbox/internal.dart'
 import 'package:objectbox/objectbox.dart' as obx;
 import 'package:objectbox_flutter_libs/objectbox_flutter_libs.dart';
 
+import 'entity/chat.dart';
 import 'entity/debug.dart';
 import 'entity/knowledge.dart';
 
@@ -80,6 +81,46 @@ final _entities = <obx_int.ModelEntity>[
     relations: <obx_int.ModelRelation>[],
     backlinks: <obx_int.ModelBacklink>[],
   ),
+  obx_int.ModelEntity(
+    id: const obx_int.IdUid(5, 4928971987271453225),
+    name: 'Chat',
+    lastPropertyId: const obx_int.IdUid(5, 6825210242188910810),
+    flags: 0,
+    properties: <obx_int.ModelProperty>[
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(1, 4765647224588334242),
+        name: 'id',
+        type: 6,
+        flags: 1,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(2, 8823602343662498657),
+        name: 'message',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(3, 6871824716491186039),
+        name: 'prompt',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(4, 6366584080122099278),
+        name: 'references',
+        type: 30,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(5, 6825210242188910810),
+        name: 'createdAt',
+        type: 10,
+        flags: 0,
+      ),
+    ],
+    relations: <obx_int.ModelRelation>[],
+    backlinks: <obx_int.ModelBacklink>[],
+  ),
 ];
 
 /// Shortcut for [obx.Store.new] that passes [getObjectBoxModel] and for Flutter
@@ -120,7 +161,7 @@ Future<obx.Store> openStore({
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
     entities: _entities,
-    lastEntityId: const obx_int.IdUid(4, 7166730782826892657),
+    lastEntityId: const obx_int.IdUid(5, 4928971987271453225),
     lastIndexId: const obx_int.IdUid(4, 500852027354353933),
     lastRelationId: const obx_int.IdUid(0, 0),
     lastSequenceId: const obx_int.IdUid(0, 0),
@@ -227,6 +268,64 @@ obx_int.ModelDefinition getObjectBoxModel() {
         return object;
       },
     ),
+    Chat: obx_int.EntityDefinition<Chat>(
+      model: _entities[2],
+      toOneRelations: (Chat object) => [],
+      toManyRelations: (Chat object) => {},
+      getId: (Chat object) => object.id,
+      setId: (Chat object, int id) {
+        object.id = id;
+      },
+      objectToFB: (Chat object, fb.Builder fbb) {
+        final messageOffset = fbb.writeString(object.message);
+        final promptOffset = object.prompt == null
+            ? null
+            : fbb.writeString(object.prompt!);
+        final referencesOffset = fbb.writeList(
+          object.references.map(fbb.writeString).toList(growable: false),
+        );
+        fbb.startTable(6);
+        fbb.addInt64(0, object.id);
+        fbb.addOffset(1, messageOffset);
+        fbb.addOffset(2, promptOffset);
+        fbb.addOffset(3, referencesOffset);
+        fbb.addInt64(4, object.createdAt.millisecondsSinceEpoch);
+        fbb.finish(fbb.endTable());
+        return object.id;
+      },
+      objectFromFB: (obx.Store store, ByteData fbData) {
+        final buffer = fb.BufferContext(fbData);
+        final rootOffset = buffer.derefObject(0);
+        final idParam = const fb.Int64Reader().vTableGet(
+          buffer,
+          rootOffset,
+          4,
+          0,
+        );
+        final messageParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 6, '');
+        final promptParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 8);
+        final referencesParam = const fb.ListReader<String>(
+          fb.StringReader(asciiOptimization: true),
+          lazy: false,
+        ).vTableGet(buffer, rootOffset, 10, []);
+        final createdAtParam = DateTime.fromMillisecondsSinceEpoch(
+          const fb.Int64Reader().vTableGet(buffer, rootOffset, 12, 0),
+        );
+        final object = Chat(
+          id: idParam,
+          message: messageParam,
+          prompt: promptParam,
+          references: referencesParam,
+          createdAt: createdAtParam,
+        );
+
+        return object;
+      },
+    ),
   };
 
   return obx_int.ModelDefinition(model, bindings);
@@ -263,5 +362,31 @@ class Debug_ {
   /// See [Debug.embedding].
   static final embedding = obx.QueryHnswProperty<Debug>(
     _entities[1].properties[2],
+  );
+}
+
+/// [Chat] entity fields to define ObjectBox queries.
+class Chat_ {
+  /// See [Chat.id].
+  static final id = obx.QueryIntegerProperty<Chat>(_entities[2].properties[0]);
+
+  /// See [Chat.message].
+  static final message = obx.QueryStringProperty<Chat>(
+    _entities[2].properties[1],
+  );
+
+  /// See [Chat.prompt].
+  static final prompt = obx.QueryStringProperty<Chat>(
+    _entities[2].properties[2],
+  );
+
+  /// See [Chat.references].
+  static final references = obx.QueryStringVectorProperty<Chat>(
+    _entities[2].properties[3],
+  );
+
+  /// See [Chat.createdAt].
+  static final createdAt = obx.QueryDateProperty<Chat>(
+    _entities[2].properties[4],
   );
 }

@@ -190,26 +190,57 @@ llama_generate_text(int32_t model_id, const char *prompt, char *out_buffer, int3
     llama_memory_clear(llama_get_memory(ctx), true);
 
     // プロンプトをトークナイズ（動的メモリ確保）
-    const int32_t max_tokens = 512;
-    std::vector<llama_token> tokens(max_tokens);
-    int32_t n_tokens = llama_tokenize(vocab, prompt, strlen(prompt), tokens.data(), max_tokens, true, false);
-
-    if (n_tokens < 0)
+    // llama_tokenize()はバッファ不足時に負値（必要トークン数）を返すため、動的にサイズを確保
+    int32_t n_tokens = 0;
+    std::vector<llama_token> tokens;
     {
+        // まず小さめのサイズで試す
+        int32_t initial_size = 512;
+        tokens.resize(initial_size);
+        n_tokens = llama_tokenize(vocab, prompt, strlen(prompt), tokens.data(), initial_size, true, false);
+
+        if (n_tokens < 0)
+        {
+            // バッファ不足: 負値の絶対値が必要トークン数
+            int32_t required_size = -n_tokens;
+            tokens.resize(required_size);
+            n_tokens = llama_tokenize(vocab, prompt, strlen(prompt), tokens.data(), required_size, true, false);
+
+            if (n_tokens < 0)
+            {
+                fprintf(stderr, "[llama_bridge] llama_tokenize failed: n_tokens=%d\n", n_tokens);
+                return LLAMA_BRIDGE_ERROR_DECODE_FAILED;
+            }
+        }
+    }
+
+    // コンテキストの制約値を取得してログ出力
+    uint32_t n_ctx = llama_n_ctx(ctx);
+    uint32_t n_batch = llama_n_batch(ctx);
+    fprintf(stderr, "[llama_bridge] generate: n_tokens=%d, n_ctx=%u, n_batch=%u\n", n_tokens, n_ctx, n_batch);
+
+    // n_ctx超過チェック
+    if (n_tokens > (int32_t)n_ctx)
+    {
+        fprintf(stderr, "[llama_bridge] ERROR: n_tokens (%d) > n_ctx (%u)\n", n_tokens, n_ctx);
         return LLAMA_BRIDGE_ERROR_DECODE_FAILED;
     }
 
-    // バッチを作成してデコード
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
-
-    // デコード実行
-    if (llama_decode(ctx, batch) < 0)
+    // プロンプトをn_batch以下のチャンクに分割してdecode
+    uint32_t chunk_size = n_batch;
+    for (int32_t offset = 0; offset < n_tokens; offset += chunk_size)
     {
-        // llama_batch_free(batch);
-        return LLAMA_BRIDGE_ERROR_DECODE_FAILED;
-    }
+        int32_t remaining = n_tokens - offset;
+        int32_t current_chunk = (remaining < (int32_t)chunk_size) ? remaining : (int32_t)chunk_size;
 
-    // llama_batch_free(batch);
+        llama_batch batch = llama_batch_get_one(tokens.data() + offset, current_chunk);
+
+        if (llama_decode(ctx, batch) < 0)
+        {
+            fprintf(stderr, "[llama_bridge] llama_decode failed at offset=%d, chunk=%d\n", offset, current_chunk);
+            return LLAMA_BRIDGE_ERROR_DECODE_FAILED;
+        }
+    }
 
     // 生成ループ（簡易版：固定パラメータ）
     std::string generated_text;
@@ -251,8 +282,8 @@ llama_generate_text(int32_t model_id, const char *prompt, char *out_buffer, int3
         }
 
         // 次のトークンをデコード
-        batch = llama_batch_get_one(&new_token_id, 1);
-        if (llama_decode(ctx, batch) < 0)
+        llama_batch next_batch = llama_batch_get_one(&new_token_id, 1);
+        if (llama_decode(ctx, next_batch) < 0)
         {
             // llama_batch_free(batch);
             break;
@@ -322,16 +353,40 @@ llama_embed_text(int32_t model_id, const char *text, float *out_buffer, int32_t 
     const llama_vocab *vocab = llama_model_get_vocab(model);
 
     // テキストをトークナイズ（動的メモリ確保）
-    std::vector<llama_token> tokens(max_tokens);
-    int32_t n_tokens = llama_tokenize(vocab, text, strlen(text), tokens.data(), max_tokens, true, false);
-
-    if (n_tokens < 0)
+    // llama_tokenize()はバッファ不足時に負値（必要トークン数）を返すため、動的にサイズを確保
+    int32_t n_tokens = 0;
+    std::vector<llama_token> tokens;
     {
-        return LLAMA_BRIDGE_ERROR_EMBEDDING_FAILED;
+        // まずmax_tokensサイズで試す
+        tokens.resize(max_tokens);
+        n_tokens = llama_tokenize(vocab, text, strlen(text), tokens.data(), max_tokens, true, false);
+
+        if (n_tokens < 0)
+        {
+            // バッファ不足: 負値の絶対値が必要トークン数
+            int32_t required_size = -n_tokens;
+            tokens.resize(required_size);
+            n_tokens = llama_tokenize(vocab, text, strlen(text), tokens.data(), required_size, true, false);
+
+            if (n_tokens < 0)
+            {
+                fprintf(stderr, "[llama_bridge] llama_tokenize failed (embedding): n_tokens=%d\n", n_tokens);
+                return LLAMA_BRIDGE_ERROR_EMBEDDING_FAILED;
+            }
+        }
     }
 
-    // バッチを作成
-    llama_batch batch = llama_batch_get_one(tokens.data(), n_tokens);
+    // コンテキストの制約値を取得してログ出力
+    uint32_t n_ctx = llama_n_ctx(ctx);
+    uint32_t n_batch = llama_n_batch(ctx);
+    fprintf(stderr, "[llama_bridge] embed: n_tokens=%d, n_ctx=%u, n_batch=%u\n", n_tokens, n_ctx, n_batch);
+
+    // n_ctx超過チェック
+    if (n_tokens > (int32_t)n_ctx)
+    {
+        fprintf(stderr, "[llama_bridge] ERROR: n_tokens (%d) > n_ctx (%u) in embedding\n", n_tokens, n_ctx);
+        return LLAMA_BRIDGE_ERROR_EMBEDDING_FAILED;
+    }
 
     // 埋め込みを有効にする
     llama_set_embeddings(ctx, true);
@@ -339,14 +394,21 @@ llama_embed_text(int32_t model_id, const char *text, float *out_buffer, int32_t 
     // 前回のKVキャッシュをクリア（埋め込み専用の推論なので毎回リセットしてOK）
     llama_memory_clear(llama_get_memory(ctx), true);
 
-    // デコード実行
-    if (llama_decode(ctx, batch) < 0)
+    // テキストをn_batch以下のチャンクに分割してdecode
+    uint32_t chunk_size = n_batch;
+    for (int32_t offset = 0; offset < n_tokens; offset += chunk_size)
     {
-        // llama_batch_free(batch);
-        return LLAMA_BRIDGE_ERROR_EMBEDDING_FAILED;
-    }
+        int32_t remaining = n_tokens - offset;
+        int32_t current_chunk = (remaining < (int32_t)chunk_size) ? remaining : (int32_t)chunk_size;
 
-    // llama_batch_free(batch);
+        llama_batch batch = llama_batch_get_one(tokens.data() + offset, current_chunk);
+
+        if (llama_decode(ctx, batch) < 0)
+        {
+            fprintf(stderr, "[llama_bridge] llama_decode failed (embedding) at offset=%d, chunk=%d\n", offset, current_chunk);
+            return LLAMA_BRIDGE_ERROR_EMBEDDING_FAILED;
+        }
+    }
 
     // プーリング方式に応じて埋め込みベクトルを取得
     float *embeddings = nullptr;

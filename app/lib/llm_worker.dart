@@ -366,11 +366,25 @@ class _LlmWorker {
     }
 
     final userText = request['userText'] as String;
-    final history =
+    final historyRaw =
         (request['history'] as List<dynamic>?)
             ?.map((e) => e as Map<String, String>)
             .toList() ??
         [];
+
+    // 履歴が長すぎる場合の安全策: 最大10ターン（5往復）に制限
+    // これによりプロンプトが長くなりすぎてn_batch超過を防ぐ
+    final maxHistoryTurns = 10;
+    final history = historyRaw.length > maxHistoryTurns
+        ? historyRaw.sublist(historyRaw.length - maxHistoryTurns)
+        : historyRaw;
+
+    if (historyRaw.length > maxHistoryTurns) {
+      _log(
+        '[WORKER] history truncated: ${historyRaw.length} -> ${history.length} turns',
+      );
+    }
+
     final k = request['k'] as int? ?? 3;
     final maxTokens = request['maxTokens'] as int? ?? 256;
 

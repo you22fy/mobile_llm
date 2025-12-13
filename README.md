@@ -1,7 +1,3 @@
 # mobile_llm
 
-## GGUFモデルの作成
- - HFからモデルのリポジトリをクローン
- - config.jsonのdtypeを確認
- - llama.cppをクローンしてきて `convert_hf_to_gguf.py` を実行
-   - 実行時に `--outtype`にdtypeを指定(bf16など)
+[学生エンジニア3団体合同×ディップLT会](https://dip-dev.connpass.com/event/376659/)でLTを行った際に作成したコードです。

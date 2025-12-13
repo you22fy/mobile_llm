@@ -204,64 +204,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  /// 知識を追加
-  Future<void> _addKnowledge() async {
-    if (!isInitialized || _isGenerating || _state != HomePageState.chatting) {
-      return;
-    }
-
-    // 直近のユーザーメッセージを取得（なければ現在の入力フィールドのテキストを使用）
-    String? userText;
-    for (int i = chats.length - 1; i >= 0; i--) {
-      if (chats[i].role == 'user') {
-        userText = chats[i].message;
-        break;
-      }
-    }
-    userText ??= inputController.text.trim();
-
-    if (userText.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('ユーザーメッセージが見つかりません')));
-      }
-      return;
-    }
-
-    try {
-      setState(() {
-        _isGenerating = true;
-      });
-
-      final result = await _workerClient.addKnowledgeFromUserText(
-        userText: userText,
-      );
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('知識を追加しました: ${result['savedText']}'),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error adding knowledge: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('知識の追加に失敗しました: $e')));
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isGenerating = false;
-        });
-      }
-    }
-  }
-
   /// ベース知識を挿入
   Future<void> _seedBaseKnowledge() async {
     if (!isInitialized || _isGenerating || _state != HomePageState.chatting) {
@@ -596,11 +538,6 @@ class _MyHomePageState extends State<MyHomePage> {
                   icon: const Icon(Icons.auto_awesome),
                   onPressed: _isGenerating ? null : _seedBaseKnowledge,
                   tooltip: 'ベース知識挿入',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.lightbulb_outline),
-                  onPressed: _isGenerating ? null : _addKnowledge,
-                  tooltip: '知識追加',
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),

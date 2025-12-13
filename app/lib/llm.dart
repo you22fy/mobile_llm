@@ -1,18 +1,15 @@
 enum Llm {
-  gemma2,
   gemma3_1b,
   gemma3_270m,
   tinyswallow;
 
   get displayName => switch (this) {
-    Llm.gemma2 => 'gemma2-2b-jpt-it',
-    Llm.gemma3_1b => 'gemma3-1b-it',
+    Llm.gemma3_1b => 'gema3-1b-it',
     Llm.gemma3_270m => 'gemma3-270m-it',
     Llm.tinyswallow => 'tinyswallow-1.5b',
   };
 
   get assetPath => switch (this) {
-    Llm.gemma2 => 'assets/artifacts/gemma-2-2B-it-BF16-Q4_K_M.gguf',
     Llm.gemma3_1b => 'assets/artifacts/gemma-3-1B-it-BF16_Q4_K_M.gguf',
     Llm.gemma3_270m => 'assets/artifacts/gemma-3-270M-BF16-Q4_K_M.gguf',
     Llm.tinyswallow =>

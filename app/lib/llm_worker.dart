@@ -178,6 +178,17 @@ class LlmWorkerClient {
     return {'count': response['count'] as int};
   }
 
+  /// 知識を全削除
+  Future<Map<String, Object?>> clearKnowledge() async {
+    final response = await _sendRequest({'type': 'clearKnowledge'});
+
+    if (response['error'] != null) {
+      throw Exception(response['error']);
+    }
+
+    return {'count': response['count'] as int};
+  }
+
   /// リクエストを送信して応答を待つ
   Future<Map<String, Object?>> _sendRequest(Map<String, Object?> request) {
     if (_isStopped) {
@@ -305,6 +316,10 @@ class _LlmWorker {
           break;
         case 'seedBaseKnowledge':
           response = await _handleSeedBaseKnowledge();
+          response['requestId'] = requestId;
+          break;
+        case 'clearKnowledge':
+          response = await _handleClearKnowledge();
           response['requestId'] = requestId;
           break;
         default:
@@ -546,6 +561,22 @@ class _LlmWorker {
 
     final count = await _seedKnowledge();
     return {'success': true, 'count': count};
+  }
+
+  /// 知識を全削除
+  Future<Map<String, Object?>> _handleClearKnowledge() async {
+    if (_knowledgeBox == null) {
+      throw StateError('Models not loaded');
+    }
+
+    _log('[WORKER] clearing knowledge start');
+    final sw = Stopwatch()..start();
+    final removed = _knowledgeBox!.removeAll();
+    sw.stop();
+    _log(
+      '[WORKER] clearing knowledge done ms=${sw.elapsedMilliseconds} count=$removed',
+    );
+    return {'success': true, 'count': removed};
   }
 
   /// 事前知識を10件追加

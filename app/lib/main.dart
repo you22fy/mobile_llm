@@ -451,6 +451,64 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  /// 知識を全削除
+  Future<void> _clearAllKnowledge() async {
+    if (!isInitialized || _isGenerating || _state != HomePageState.chatting) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('知識を全削除しますか？'),
+        content: const Text('保存されている知識がすべて削除されます。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('削除'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      setState(() {
+        _isGenerating = true;
+      });
+
+      final result = await _workerClient.clearKnowledge();
+      final count = result['count'] as int;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('知識を${count}件削除しました'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error clearing knowledge: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('知識の削除に失敗しました: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
+    }
+  }
+
   Future<void> _sendMessage() async {
     final text = inputController.text.trim();
     if (text.isEmpty ||
@@ -543,6 +601,11 @@ class _MyHomePageState extends State<MyHomePage> {
                   icon: const Icon(Icons.delete_outline),
                   onPressed: _isGenerating ? null : _resetChatHistory,
                   tooltip: '履歴リセット',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_forever),
+                  onPressed: _isGenerating ? null : _clearAllKnowledge,
+                  tooltip: '知識全削除',
                 ),
                 IconButton(
                   icon: const Icon(Icons.close),

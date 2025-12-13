@@ -135,6 +135,7 @@ class LlmWorkerClient {
               ?.map((e) => (e as num).toDouble())
               .toList() ??
           [],
+      'prompt': response['prompt'] as String?,
     };
   }
 
@@ -402,7 +403,12 @@ class _LlmWorker {
     final contexts = searchResults.map((r) => r.object.text).toList();
     final scores = searchResults.map((r) => r.score).toList();
 
-    return {'replyText': replyText, 'contexts': contexts, 'scores': scores};
+    return {
+      'replyText': replyText,
+      'contexts': contexts,
+      'scores': scores,
+      'prompt': prompt, // RAGプロンプト文字列を追加
+    };
   }
 
   /// ユーザー入力から知識を生成して追加

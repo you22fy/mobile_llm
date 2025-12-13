@@ -82,37 +82,43 @@ final _entities = <obx_int.ModelEntity>[
     backlinks: <obx_int.ModelBacklink>[],
   ),
   obx_int.ModelEntity(
-    id: const obx_int.IdUid(5, 4928971987271453225),
+    id: const obx_int.IdUid(6, 6031908967236263197),
     name: 'Chat',
-    lastPropertyId: const obx_int.IdUid(5, 6825210242188910810),
+    lastPropertyId: const obx_int.IdUid(6, 8766794078658767422),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
-        id: const obx_int.IdUid(1, 4765647224588334242),
+        id: const obx_int.IdUid(1, 5434325169624088095),
         name: 'id',
         type: 6,
         flags: 1,
       ),
       obx_int.ModelProperty(
-        id: const obx_int.IdUid(2, 8823602343662498657),
+        id: const obx_int.IdUid(2, 644663752843412903),
         name: 'message',
         type: 9,
         flags: 0,
       ),
       obx_int.ModelProperty(
-        id: const obx_int.IdUid(3, 6871824716491186039),
+        id: const obx_int.IdUid(3, 4764685395943291104),
+        name: 'role',
+        type: 9,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(4, 1531990624908601514),
         name: 'prompt',
         type: 9,
         flags: 0,
       ),
       obx_int.ModelProperty(
-        id: const obx_int.IdUid(4, 6366584080122099278),
+        id: const obx_int.IdUid(5, 6845007198290842396),
         name: 'references',
         type: 30,
         flags: 0,
       ),
       obx_int.ModelProperty(
-        id: const obx_int.IdUid(5, 6825210242188910810),
+        id: const obx_int.IdUid(6, 8766794078658767422),
         name: 'createdAt',
         type: 10,
         flags: 0,
@@ -161,11 +167,15 @@ Future<obx.Store> openStore({
 obx_int.ModelDefinition getObjectBoxModel() {
   final model = obx_int.ModelInfo(
     entities: _entities,
-    lastEntityId: const obx_int.IdUid(5, 4928971987271453225),
+    lastEntityId: const obx_int.IdUid(6, 6031908967236263197),
     lastIndexId: const obx_int.IdUid(4, 500852027354353933),
     lastRelationId: const obx_int.IdUid(0, 0),
     lastSequenceId: const obx_int.IdUid(0, 0),
-    retiredEntityUids: const [2473982829664018892, 5980520435912860748],
+    retiredEntityUids: const [
+      2473982829664018892,
+      5980520435912860748,
+      4928971987271453225,
+    ],
     retiredIndexUids: const [],
     retiredPropertyUids: const [
       853057308695734837,
@@ -174,6 +184,11 @@ obx_int.ModelDefinition getObjectBoxModel() {
       4420975305487955315,
       1426900679850647831,
       4961765487799980260,
+      4765647224588334242,
+      8823602343662498657,
+      6871824716491186039,
+      6366584080122099278,
+      6825210242188910810,
     ],
     retiredRelationUids: const [],
     modelVersion: 5,
@@ -278,18 +293,20 @@ obx_int.ModelDefinition getObjectBoxModel() {
       },
       objectToFB: (Chat object, fb.Builder fbb) {
         final messageOffset = fbb.writeString(object.message);
+        final roleOffset = fbb.writeString(object.role);
         final promptOffset = object.prompt == null
             ? null
             : fbb.writeString(object.prompt!);
         final referencesOffset = fbb.writeList(
           object.references.map(fbb.writeString).toList(growable: false),
         );
-        fbb.startTable(6);
+        fbb.startTable(7);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, messageOffset);
-        fbb.addOffset(2, promptOffset);
-        fbb.addOffset(3, referencesOffset);
-        fbb.addInt64(4, object.createdAt.millisecondsSinceEpoch);
+        fbb.addOffset(2, roleOffset);
+        fbb.addOffset(3, promptOffset);
+        fbb.addOffset(4, referencesOffset);
+        fbb.addInt64(5, object.createdAt.millisecondsSinceEpoch);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -305,19 +322,23 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final messageParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGet(buffer, rootOffset, 6, '');
+        final roleParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGet(buffer, rootOffset, 8, '');
         final promptParam = const fb.StringReader(
           asciiOptimization: true,
-        ).vTableGetNullable(buffer, rootOffset, 8);
+        ).vTableGetNullable(buffer, rootOffset, 10);
         final referencesParam = const fb.ListReader<String>(
           fb.StringReader(asciiOptimization: true),
           lazy: false,
-        ).vTableGet(buffer, rootOffset, 10, []);
+        ).vTableGet(buffer, rootOffset, 12, []);
         final createdAtParam = DateTime.fromMillisecondsSinceEpoch(
-          const fb.Int64Reader().vTableGet(buffer, rootOffset, 12, 0),
+          const fb.Int64Reader().vTableGet(buffer, rootOffset, 14, 0),
         );
         final object = Chat(
           id: idParam,
           message: messageParam,
+          role: roleParam,
           prompt: promptParam,
           references: referencesParam,
           createdAt: createdAtParam,
@@ -375,18 +396,21 @@ class Chat_ {
     _entities[2].properties[1],
   );
 
+  /// See [Chat.role].
+  static final role = obx.QueryStringProperty<Chat>(_entities[2].properties[2]);
+
   /// See [Chat.prompt].
   static final prompt = obx.QueryStringProperty<Chat>(
-    _entities[2].properties[2],
+    _entities[2].properties[3],
   );
 
   /// See [Chat.references].
   static final references = obx.QueryStringVectorProperty<Chat>(
-    _entities[2].properties[3],
+    _entities[2].properties[4],
   );
 
   /// See [Chat.createdAt].
   static final createdAt = obx.QueryDateProperty<Chat>(
-    _entities[2].properties[4],
+    _entities[2].properties[5],
   );
 }

@@ -25,16 +25,21 @@ class ChatBox {
   /// メッセージを保存する
   /// [role] は 'user' または 'assistant' を指定
   /// [content] はメッセージ内容
+  /// [prompt] はRAGプロンプト文字列（assistantの場合のみ）
+  /// [references] はRAG検索で使ったcontexts（assistantの場合のみ）
   Future<Chat> insertMessage({
     required String role,
     required String content,
+    String? prompt,
+    List<String>? references,
     DateTime? createdAt,
   }) async {
     final chat = Chat(
       id: 0,
       message: content,
-      prompt: role,
-      references: [],
+      role: role,
+      prompt: prompt,
+      references: references ?? [],
       createdAt: createdAt ?? DateTime.now(),
     );
     chatBox.put(chat);

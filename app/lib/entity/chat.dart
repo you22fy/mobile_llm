@@ -1,11 +1,12 @@
-import 'package:app/objectbox.g.dart';
+import 'package:objectbox/objectbox.dart';
 
 @Entity()
 class Chat {
   Chat({
     required this.id,
     required this.message,
-    required this.prompt,
+    required this.role,
+    this.prompt,
     required this.references,
     required this.createdAt,
   });
@@ -13,7 +14,8 @@ class Chat {
   int id;
 
   final String message;
-  final String? prompt;
-  final List<String> references;
+  final String role; // 'user' または 'assistant'
+  final String? prompt; // RAGプロンプト文字列（assistantのみ）
+  final List<String> references; // RAG検索で使ったcontexts
   final DateTime createdAt;
 }

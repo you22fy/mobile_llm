@@ -213,7 +213,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // 直近のユーザーメッセージを取得（なければ現在の入力フィールドのテキストを使用）
     String? userText;
     for (int i = chats.length - 1; i >= 0; i--) {
-      if (chats[i].prompt == 'user') {
+      if (chats[i].role == 'user') {
         userText = chats[i].message;
         break;
       }
@@ -260,6 +260,171 @@ class _MyHomePageState extends State<MyHomePage> {
         });
       }
     }
+  }
+
+  /// AI応答の詳細（prompt/references）をBottomSheetで表示
+  void _showChatDetailsBottomSheet(BuildContext context, Chat chat) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // ハンドル
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // タイトル
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                child: Text(
+                  'AI応答の詳細',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Divider(),
+              // コンテンツ
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Promptセクション
+                      Text(
+                        'Prompt',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          chat.prompt ?? '(プロンプト情報なし)',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontFamily: 'monospace', fontSize: 12),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Referencesセクション
+                      Text(
+                        'References',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      if (chat.references.isEmpty)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '参照なし',
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
+                        )
+                      else
+                        ...chat.references.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final reference = entry.value;
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 24,
+                                  height: 24,
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primaryContainer,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '${index + 1}',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onPrimaryContainer,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: SelectableText(
+                                    reference,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodyMedium,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   /// チャット履歴をリセット（全削除）
@@ -331,7 +496,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ? chats.sublist(chats.length - 6)
           : chats;
       final history = recentChats
-          .map((chat) => {'role': chat.prompt ?? '', 'content': chat.message})
+          .map((chat) => {'role': chat.role, 'content': chat.message})
           .toList()
           .cast<Map<String, String>>();
 
@@ -343,10 +508,16 @@ class _MyHomePageState extends State<MyHomePage> {
         maxTokens: 256,
       );
 
-      // AI応答を保存
+      // AI応答を保存（promptとreferencesを含む）
       final aiChat = await chatBox.insertMessage(
         role: 'assistant',
         content: result['replyText'] as String,
+        prompt: result['prompt'] as String?,
+        references:
+            (result['contexts'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
       );
 
       setState(() {
@@ -523,32 +694,37 @@ class _MyHomePageState extends State<MyHomePage> {
             itemCount: chats.length,
             itemBuilder: (context, index) {
               final chat = chats[index];
-              final isUser = chat.prompt == 'user';
+              final isUser = chat.role == 'user';
               return Align(
                 alignment: isUser
                     ? Alignment.centerRight
                     : Alignment.centerLeft,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 12.0),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 10.0,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isUser
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(18.0),
-                  ),
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.75,
-                  ),
-                  child: Text(
-                    chat.message,
-                    style: TextStyle(
+                child: GestureDetector(
+                  onTap: !isUser
+                      ? () => _showChatDetailsBottomSheet(context, chat)
+                      : null,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12.0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 10.0,
+                    ),
+                    decoration: BoxDecoration(
                       color: isUser
-                          ? Theme.of(context).colorScheme.onPrimaryContainer
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context).colorScheme.surfaceContainer,
+                      borderRadius: BorderRadius.circular(18.0),
+                    ),
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.75,
+                    ),
+                    child: Text(
+                      chat.message,
+                      style: TextStyle(
+                        color: isUser
+                            ? Theme.of(context).colorScheme.onPrimaryContainer
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),

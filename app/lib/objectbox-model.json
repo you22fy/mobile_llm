@@ -57,7 +57,7 @@
     },
     {
       "id": "6:6031908967236263197",
-      "lastPropertyId": "6:8766794078658767422",
+      "lastPropertyId": "7:4906113579538211168",
       "name": "Chat",
       "properties": [
         {
@@ -90,6 +90,11 @@
           "id": "6:8766794078658767422",
           "name": "createdAt",
           "type": 10
+        },
+        {
+          "id": "7:4906113579538211168",
+          "name": "rawMessage",
+          "type": 9
         }
       ],
       "relations": []

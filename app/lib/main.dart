@@ -396,6 +396,29 @@ class _MyHomePageState extends State<MyHomePage> {
                             ),
                           );
                         }),
+                      const SizedBox(height: 24),
+                      // Raw replyセクション
+                      Text(
+                        'Raw reply',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          chat.rawMessage ?? '(raw出力なし)',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(fontFamily: 'monospace', fontSize: 12),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -546,11 +569,12 @@ class _MyHomePageState extends State<MyHomePage> {
         maxTokens: 256,
       );
 
-      // AI応答を保存（promptとreferencesを含む）
+      // AI応答を保存（prompt、rawReplyText、referencesを含む）
       final aiChat = await chatBox.insertMessage(
         role: 'assistant',
         content: result['replyText'] as String,
         prompt: result['prompt'] as String?,
+        rawContent: result['rawReplyText'] as String?,
         references:
             (result['contexts'] as List<dynamic>?)
                 ?.map((e) => e as String)

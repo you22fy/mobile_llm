@@ -26,11 +26,13 @@ class ChatBox {
   /// [role] は 'user' または 'assistant' を指定
   /// [content] はメッセージ内容
   /// [prompt] はRAGプロンプト文字列（assistantの場合のみ）
+  /// [rawContent] はLLMの生出力（assistantの場合のみ）
   /// [references] はRAG検索で使ったcontexts（assistantの場合のみ）
   Future<Chat> insertMessage({
     required String role,
     required String content,
     String? prompt,
+    String? rawContent,
     List<String>? references,
     DateTime? createdAt,
   }) async {
@@ -39,6 +41,7 @@ class ChatBox {
       message: content,
       role: role,
       prompt: prompt,
+      rawMessage: rawContent,
       references: references ?? [],
       createdAt: createdAt ?? DateTime.now(),
     );

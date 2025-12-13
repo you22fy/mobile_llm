@@ -125,6 +125,7 @@ class LlmWorkerClient {
 
     return {
       'replyText': response['replyText'] as String,
+      'rawReplyText': response['rawReplyText'] as String,
       'contexts':
           (response['contexts'] as List<dynamic>?)
               ?.map((e) => e as String)
@@ -287,6 +288,18 @@ class _LlmWorker {
 
   _LlmWorker(this._mainSendPort);
 
+  /// LLMの出力から `<response>...</response>` 内の本文だけを抽出する。
+  /// - タグが見つからない場合は raw を trim して返す（モデルが制約を破ったときのフォールバック）
+  /// - 複数マッチする場合は先頭を採用
+  String _extractResponseText(String raw) {
+    final match = RegExp(
+      r'<response>([\s\S]*?)</response>',
+      caseSensitive: false,
+    ).firstMatch(raw);
+    final extracted = match?.group(1);
+    return (extracted ?? raw).trim();
+  }
+
   /// リクエストを処理（直列実行）
   Future<void> handleRequest(Map<String, Object?> request) async {
     final requestId = request['requestId'] as int;
@@ -434,10 +447,14 @@ class _LlmWorker {
     _log(
       '[WORKER] generate start maxTokens=$maxTokens promptLen=${prompt.length}',
     );
-    final replyText = await _llmModel!.generate(prompt, maxTokens: maxTokens);
+    final rawReplyText = await _llmModel!.generate(
+      prompt,
+      maxTokens: maxTokens,
+    );
+    final replyText = _extractResponseText(rawReplyText);
     swGen.stop();
     _log(
-      '[WORKER] generate done ms=${swGen.elapsedMilliseconds} replyLen=${replyText.length}',
+      '[WORKER] generate done ms=${swGen.elapsedMilliseconds} rawReplyLen=${rawReplyText.length} replyLen=${replyText.length}',
     );
 
     // 5. 結果を返す
@@ -446,6 +463,7 @@ class _LlmWorker {
 
     return {
       'replyText': replyText,
+      'rawReplyText': rawReplyText,
       'contexts': contexts,
       'scores': scores,
       'prompt': prompt, // RAGプロンプト文字列を追加
@@ -521,34 +539,47 @@ class _LlmWorker {
   ) {
     final buffer = StringBuffer();
     // ユーザー入力
-    buffer.writeln('User input:');
+    buffer.writeln('<instruction>');
+    buffer.writeln('ユーザのメッセージに対しての返信文章を日本語で生成せよ');
+    buffer.writeln('user_input: ユーザからのメッセージ。あなたはこれに対しての応答を生成する');
+    buffer.writeln('conversation_history: 会話履歴。あなたはこれを参考にして応答を生成する');
+    buffer.writeln('references: 関連する可能性のある情報。あなたは応答の生成時にこれを参照しても良い');
+    buffer.writeln('response: 応答文章。あなたはこれを生成する');
+    buffer.writeln('constraints: 制約事項。あなたはこれに従って応答を生成する');
+    buffer.writeln('</instruction>');
+
+    buffer.writeln('<user_input>');
     buffer.writeln(userText);
+    buffer.writeln('</user_input>');
 
     // 会話履歴
-    buffer.writeln('Conversation history:');
     if (history.isNotEmpty) {
+      buffer.writeln('<conversation_history>');
       for (final chat in history) {
         final role = chat['role'] == 'user' ? 'ユーザー' : 'アシスタント';
         buffer.writeln('$role: 「${chat['content']}」');
       }
+      buffer.writeln('</conversation_history>');
     }
     buffer.writeln();
 
-    buffer.writeln('# Constraints:');
-    buffer.writeln('1. Generate a response only for the user input.');
-    buffer.writeln('2. Generate only the response text, no other metadata.');
-    buffer.writeln('3. Do not generate any other information.');
-    buffer.writeln('4. You must response in Japanese.');
-    buffer.writeln(
-      '5. If the following information is needed in the conversation, use it to generate the response.',
-    );
+    // 関連する可能性のある情報
     if (searchResults.isNotEmpty) {
+      buffer.writeln('<references>');
       for (final result in searchResults) {
         buffer.writeln('- ${result.object.text}');
       }
+      buffer.writeln('</references>');
     }
 
-    buffer.writeln('Response:');
+    // 制約事項
+    buffer.writeln('<constraints>');
+    buffer.writeln('・応答文章は日本語で生成せよ');
+    buffer.writeln('・応答文章は<response>タグのみを生成せよ。');
+    buffer.writeln('・<response>タグの中にはプレーンテキストのみを生成せよ。');
+    buffer.writeln('・回答はプレーンテキストで生成せよ');
+    buffer.writeln('・回答の中にマークダウン(Markdown)を使用してはならない');
+    buffer.writeln('</constraints>');
 
     return buffer.toString();
   }
@@ -590,16 +621,16 @@ class _LlmWorker {
 
     // 固定10件の知識テキスト
     final knowledgeTexts = [
-      'FlutterはGoogleが開発したモバイルアプリケーション開発フレームワークです。',
-      'DartはFlutterで使用されるプログラミング言語で、オブジェクト指向言語です。',
-      'ObjectBoxは高速なオブジェクトデータベースで、モバイルアプリに適しています。',
-      'RAG（Retrieval-Augmented Generation）は検索と生成を組み合わせたAI技術です。',
-      'ベクトル検索は意味的に類似した文書を見つけるための技術です。',
-      '埋め込み（Embedding）はテキストを数値ベクトルに変換する技術です。',
-      'LLM（Large Language Model）は大規模な言語モデルで、テキスト生成が可能です。',
-      'IsolateはDartで並行処理を実現するための軽量スレッドです。',
-      'ネイティブコードはプラットフォーム固有のコードで、高速な処理が可能です。',
-      'モバイルアプリ開発では、パフォーマンスとユーザー体験が重要です。',
+      '福大ピアプロは福岡大学に存在するプログラミング同好会です。',
+      'ピアプロの学生の多くは電子情報工学科（TL)の学生です',
+      '福岡大学は福岡市の城南区に存在します',
+      'Q-PITは北海道化学大学発祥のICTを活用した新たな手法や企画を提案する団体です。',
+      'Q-PIは学内向けのウェブアプリやモバイルアプリ開発をしています',
+      '北海道には情報系の大学が多いです',
+      'Tech.Uniは関西学院大学発祥のIT学生団体です。',
+      'Tech.Uniは組織理念として「世の中に価値あるプロダクトを」「人から学び」「共に学ぶ」を掲げています',
+      'ディップ株式会社は「バイトル」や「はたらこねっと」などの人材サービスを開発しています',
+      'このLT大会は３つの学生団体とディップ株式会社によって開催されています。',
     ];
 
     // 各テキストをembeddingしてKnowledgeオブジェクトを作成

@@ -84,7 +84,7 @@ final _entities = <obx_int.ModelEntity>[
   obx_int.ModelEntity(
     id: const obx_int.IdUid(6, 6031908967236263197),
     name: 'Chat',
-    lastPropertyId: const obx_int.IdUid(6, 8766794078658767422),
+    lastPropertyId: const obx_int.IdUid(7, 4906113579538211168),
     flags: 0,
     properties: <obx_int.ModelProperty>[
       obx_int.ModelProperty(
@@ -121,6 +121,12 @@ final _entities = <obx_int.ModelEntity>[
         id: const obx_int.IdUid(6, 8766794078658767422),
         name: 'createdAt',
         type: 10,
+        flags: 0,
+      ),
+      obx_int.ModelProperty(
+        id: const obx_int.IdUid(7, 4906113579538211168),
+        name: 'rawMessage',
+        type: 9,
         flags: 0,
       ),
     ],
@@ -300,13 +306,17 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final referencesOffset = fbb.writeList(
           object.references.map(fbb.writeString).toList(growable: false),
         );
-        fbb.startTable(7);
+        final rawMessageOffset = object.rawMessage == null
+            ? null
+            : fbb.writeString(object.rawMessage!);
+        fbb.startTable(8);
         fbb.addInt64(0, object.id);
         fbb.addOffset(1, messageOffset);
         fbb.addOffset(2, roleOffset);
         fbb.addOffset(3, promptOffset);
         fbb.addOffset(4, referencesOffset);
         fbb.addInt64(5, object.createdAt.millisecondsSinceEpoch);
+        fbb.addOffset(6, rawMessageOffset);
         fbb.finish(fbb.endTable());
         return object.id;
       },
@@ -328,6 +338,9 @@ obx_int.ModelDefinition getObjectBoxModel() {
         final promptParam = const fb.StringReader(
           asciiOptimization: true,
         ).vTableGetNullable(buffer, rootOffset, 10);
+        final rawMessageParam = const fb.StringReader(
+          asciiOptimization: true,
+        ).vTableGetNullable(buffer, rootOffset, 16);
         final referencesParam = const fb.ListReader<String>(
           fb.StringReader(asciiOptimization: true),
           lazy: false,
@@ -340,6 +353,7 @@ obx_int.ModelDefinition getObjectBoxModel() {
           message: messageParam,
           role: roleParam,
           prompt: promptParam,
+          rawMessage: rawMessageParam,
           references: referencesParam,
           createdAt: createdAtParam,
         );
@@ -412,5 +426,10 @@ class Chat_ {
   /// See [Chat.createdAt].
   static final createdAt = obx.QueryDateProperty<Chat>(
     _entities[2].properties[5],
+  );
+
+  /// See [Chat.rawMessage].
+  static final rawMessage = obx.QueryStringProperty<Chat>(
+    _entities[2].properties[6],
   );
 }

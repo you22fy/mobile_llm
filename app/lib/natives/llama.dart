@@ -138,28 +138,51 @@ class LlamaModel {
     }
 
     final promptPtr = prompt.toNativeUtf8();
-    final bufferSize = maxTokens * 10;
-    final outBuffer = malloc.allocate<Uint8>(
-      bufferSize + 1,
-    );
+    int bufferSize = maxTokens * 10;
+    Pointer<Uint8>? outBuffer;
 
     try {
-      final result = _llamaGenerateText(
-        id,
-        promptPtr,
-        outBuffer.cast<Utf8>(),
-        bufferSize,
-      );
-      if (result < 0) {
-        throw Exception(
-          'Failed to generate text: ${LlamaError.getMessage(result)}',
+      // バッファが小さすぎる場合に段階的に拡張してリトライ
+      int maxRetries = 3;
+      for (int retry = 0; retry < maxRetries; retry++) {
+        if (outBuffer != null) {
+          malloc.free(outBuffer);
+        }
+        outBuffer = malloc.allocate<Uint8>(bufferSize + 1);
+
+        final result = _llamaGenerateText(
+          id,
+          promptPtr,
+          outBuffer.cast<Utf8>(),
+          bufferSize,
         );
+
+        if (result == LlamaError.bufferTooSmall) {
+          // バッファを2倍に拡張してリトライ
+          bufferSize *= 2;
+          continue;
+        }
+
+        if (result < 0) {
+          throw Exception(
+            'Failed to generate text: ${LlamaError.getMessage(result)}',
+          );
+        }
+
+        // 成功
+        outBuffer[result] = 0;
+        return outBuffer.cast<Utf8>().toDartString(length: result);
       }
-      outBuffer[result] = 0;
-      return outBuffer.cast<Utf8>().toDartString(length: result);
+
+      // リトライ上限に達した
+      throw Exception(
+        'Failed to generate text: buffer too small even after $maxRetries retries (size: $bufferSize)',
+      );
     } finally {
       malloc.free(promptPtr);
-      malloc.free(outBuffer);
+      if (outBuffer != null) {
+        malloc.free(outBuffer);
+      }
     }
   }
 
@@ -212,12 +235,18 @@ class LlamaEmbeddingModel {
 
   /// 埋め込み次元数を取得する
   int get embeddingDim {
+    if (_disposed) {
+      throw StateError('Model has been disposed');
+    }
     if (_embeddingDim == null) {
       final dim = _llamaGetEmbeddingDim(id);
       if (dim < 0) {
         throw Exception(
           'Failed to get embedding dimension: ${LlamaError.getMessage(dim)}',
         );
+      }
+      if (dim == 0) {
+        throw Exception('Invalid embedding dimension: 0');
       }
       _embeddingDim = dim;
     }
@@ -230,8 +259,12 @@ class LlamaEmbeddingModel {
       throw StateError('Model has been disposed');
     }
 
-    final textPtr = text.toNativeUtf8();
     final dim = embeddingDim;
+    if (dim <= 0) {
+      throw StateError('Invalid embedding dimension: $dim');
+    }
+
+    final textPtr = text.toNativeUtf8();
     final outBuffer = malloc<Float>(dim);
 
     try {
@@ -265,11 +298,17 @@ class LlamaEmbeddingModel {
       return;
     }
     _disposed = true;
-    final result = _llamaUnloadModel(id);
-    if (result != LlamaError.success) {
-      throw Exception(
-        'Failed to unload model: ${LlamaError.getMessage(result)}',
-      );
+    try {
+      final result = _llamaUnloadModel(id);
+      if (result != LlamaError.success) {
+        // エラー時も例外を投げずにログ出力（複数回dispose呼び出し時の安全性）
+        print(
+          'Warning: Failed to unload embedding model (ID: $id): ${LlamaError.getMessage(result)}',
+        );
+      }
+    } catch (e) {
+      // 予期しないエラーもログ出力のみ
+      print('Warning: Exception during embedding model disposal (ID: $id): $e');
     }
   }
 }

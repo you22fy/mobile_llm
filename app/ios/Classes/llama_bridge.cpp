@@ -84,11 +84,13 @@ llama_load_model(const char *model_path, int32_t is_embedding)
     }
     else
     {
-        ctx_params.n_ctx = 32;
-        ctx_params.n_batch = 128;
-        ctx_params.n_ubatch = 128;
-        ctx_params.n_threads = 4;
-        ctx_params.n_threads_batch = 4;
+        // 生成ではプロンプト＋生成トークン数を収容できるだけのコンテキスト長が必要。
+        // n_ctx が小さすぎると decode が失敗したり、実装によってはabortする可能性がある。
+        ctx_params.n_ctx = 2048;
+        ctx_params.n_batch = 256;
+        ctx_params.n_ubatch = 256;
+        ctx_params.n_threads = 8;
+        ctx_params.n_threads_batch = 8;
     }
 
     fprintf(stderr,
@@ -184,6 +186,11 @@ llama_generate_text(int32_t model_id, const char *prompt, char *out_buffer, int3
     llama_context *ctx = model_ctx.ctx;
     const llama_vocab *vocab = llama_model_get_vocab(model_ctx.model);
 
+    // 生成のたびにKVキャッシュをクリア（会話履歴はDart側でプロンプトに含めるため）
+    // これをしないと前回推論の状態が残り、n_ctx超過や不正状態になり得る。
+    llama_set_embeddings(ctx, false);
+    llama_memory_clear(llama_get_memory(ctx), true);
+
     // プロンプトをトークナイズ（動的メモリ確保）
     const int32_t max_tokens = 512;
     std::vector<llama_token> tokens(max_tokens);
@@ -228,9 +235,6 @@ llama_generate_text(int32_t model_id, const char *prompt, char *out_buffer, int3
 
     for (int32_t i = 0; i < max_gen_tokens; i++)
     {
-        // 最後のトークンのロジットを取得
-        float *logits = llama_get_logits_ith(ctx, -1);
-
         // サンプリング
         llama_token new_token_id = llama_sampler_sample(sampler, ctx, -1);
 

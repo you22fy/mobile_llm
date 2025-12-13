@@ -1,0 +1,449 @@
+import 'dart:async';
+import 'dart:isolate';
+
+import 'package:app/entity/knowledge.dart';
+import 'package:app/natives/llama.dart';
+import 'package:app/objectbox.g.dart';
+import 'package:flutter/services.dart';
+
+/// LLM+RAGワーカーIsolateのクライアント
+class LlmWorkerClient {
+  Isolate? _isolate;
+  SendPort? _sendPort;
+  ReceivePort? _receivePort;
+  ReceivePort? _errorPort;
+  ReceivePort? _exitPort;
+  final Map<int, Completer<Map<String, Object?>>> _pendingRequests = {};
+  int _requestIdCounter = 0;
+  bool _isStopped = false;
+
+  /// ワーカーIsolateを起動して接続
+  Future<void> start({RootIsolateToken? rootIsolateToken}) async {
+    if (_isolate != null) {
+      return; // 既に起動済み
+    }
+
+    _isStopped = false;
+    _receivePort = ReceivePort();
+    _errorPort = ReceivePort();
+    _exitPort = ReceivePort();
+
+    _isolate = await Isolate.spawn<_WorkerInit>(
+      _workerEntryPoint,
+      _WorkerInit(
+        mainSendPort: _receivePort!.sendPort,
+        rootIsolateToken: rootIsolateToken,
+      ),
+      debugName: 'llm_rag_worker',
+      onError: _errorPort!.sendPort,
+      onExit: _exitPort!.sendPort,
+      errorsAreFatal: true,
+    );
+
+    _errorPort!.listen((message) {
+      // message is typically [errorString, stackString]
+      _log('[UI] worker onError: $message');
+      _failAllPending('Worker error: $message');
+    });
+    _exitPort!.listen((_) {
+      _log('[UI] worker onExit');
+      _sendPort = null;
+      _isolate = null;
+      _failAllPending('Worker exited unexpectedly');
+    });
+
+    // 初期メッセージ（SendPort）を受信
+    final completer = Completer<SendPort>();
+    _receivePort!.listen((message) {
+      if (message is SendPort) {
+        completer.complete(message);
+      } else if (message is Map<String, Object?>) {
+        _handleResponse(message);
+      } else {
+        _log('[UI] unknown message from worker: $message');
+      }
+    });
+
+    _sendPort = await completer.future;
+    _log('[UI] worker connected');
+  }
+
+  /// ワーカーを停止
+  Future<void> stop() async {
+    _isStopped = true;
+    if (_isolate != null) {
+      _isolate!.kill(priority: Isolate.immediate);
+      _isolate = null;
+      _sendPort = null;
+      _receivePort?.close();
+      _receivePort = null;
+      _errorPort?.close();
+      _errorPort = null;
+      _exitPort?.close();
+      _exitPort = null;
+      _failAllPending('Worker stopped');
+      _pendingRequests.clear();
+    }
+  }
+
+  /// モデルをロード
+  Future<void> load({
+    required String llmModelPath,
+    required String embeddingModelPath,
+    required String knowledgeDbDir,
+  }) async {
+    final response = await _sendRequest({
+      'type': 'load',
+      'llmModelPath': llmModelPath,
+      'embeddingModelPath': embeddingModelPath,
+      'knowledgeDbDir': knowledgeDbDir,
+    });
+
+    if (response['error'] != null) {
+      throw Exception(response['error']);
+    }
+  }
+
+  /// RAGで応答を生成
+  Future<Map<String, Object?>> generateRag({
+    required String userText,
+    required List<Map<String, String>> history,
+    int k = 3,
+    int maxTokens = 128,
+  }) async {
+    final response = await _sendRequest({
+      'type': 'generateRag',
+      'userText': userText,
+      'history': history,
+      'k': k,
+      'maxTokens': maxTokens,
+    });
+
+    if (response['error'] != null) {
+      throw Exception(response['error']);
+    }
+
+    return {
+      'replyText': response['replyText'] as String,
+      'contexts':
+          (response['contexts'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      'scores':
+          (response['scores'] as List<dynamic>?)
+              ?.map((e) => (e as num).toDouble())
+              .toList() ??
+          [],
+    };
+  }
+
+  /// モデルをアンロード
+  Future<void> unload() async {
+    final response = await _sendRequest({'type': 'unload'});
+
+    if (response['error'] != null) {
+      throw Exception(response['error']);
+    }
+  }
+
+  /// リクエストを送信して応答を待つ
+  Future<Map<String, Object?>> _sendRequest(Map<String, Object?> request) {
+    if (_isStopped) {
+      return Future.error(StateError('Worker is stopped'));
+    }
+    final sendPort = _sendPort;
+    if (sendPort == null) {
+      return Future.error(StateError('Worker is not connected'));
+    }
+
+    final requestId = _requestIdCounter++;
+    final completer = Completer<Map<String, Object?>>();
+    _pendingRequests[requestId] = completer;
+
+    final message = {...request, 'requestId': requestId};
+    _log('[UI] -> worker $message');
+    sendPort.send(message);
+
+    // ネイティブクラッシュ等で応答が返らないケースがあるためタイムアウトを付ける
+    return completer.future.timeout(
+      const Duration(seconds: 120),
+      onTimeout: () {
+        _pendingRequests.remove(requestId);
+        throw TimeoutException('Worker request timed out: ${request['type']}');
+      },
+    );
+  }
+
+  /// 応答を処理
+  void _handleResponse(Map<String, Object?> response) {
+    final requestId = response['requestId'] as int?;
+    if (requestId == null) return;
+
+    final completer = _pendingRequests.remove(requestId);
+    _log('[UI] <- worker $response');
+    completer?.complete(response);
+  }
+
+  void _failAllPending(String message) {
+    for (final entry in _pendingRequests.entries) {
+      if (!entry.value.isCompleted) {
+        entry.value.complete({'requestId': entry.key, 'error': message});
+      }
+    }
+    _pendingRequests.clear();
+  }
+}
+
+class _WorkerInit {
+  final SendPort mainSendPort;
+  final RootIsolateToken? rootIsolateToken;
+
+  const _WorkerInit({
+    required this.mainSendPort,
+    required this.rootIsolateToken,
+  });
+}
+
+/// ワーカーIsolateのエントリーポイント
+void _workerEntryPoint(_WorkerInit init) {
+  // background isolate でも platform channel を使えるように初期化（必要になるケースがある）
+  if (init.rootIsolateToken != null) {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(init.rootIsolateToken!);
+  }
+
+  final workerReceivePort = ReceivePort();
+  init.mainSendPort.send(workerReceivePort.sendPort);
+
+  final worker = _LlmWorker(init.mainSendPort);
+  // 例外を握りつぶさずにonErrorへ流す
+  runZonedGuarded(
+    () {
+      workerReceivePort.listen((message) async {
+        if (message is Map<String, Object?>) {
+          await worker.handleRequest(message);
+        } else {
+          _log('[WORKER] unknown message: $message');
+        }
+      });
+    },
+    (error, stack) {
+      _log('[WORKER] zone error: $error\n$stack');
+      // zoneエラーはfatalになりうるので、そのまま落としてonErrorへ
+      throw error;
+    },
+  );
+}
+
+/// ワーカー内部実装
+class _LlmWorker {
+  final SendPort _mainSendPort;
+  LlamaModel? _llmModel;
+  LlamaEmbeddingModel? _embeddingModel;
+  Store? _store;
+  Box<Knowledge>? _knowledgeBox;
+
+  _LlmWorker(this._mainSendPort);
+
+  /// リクエストを処理（直列実行）
+  Future<void> handleRequest(Map<String, Object?> request) async {
+    final requestId = request['requestId'] as int;
+    final type = request['type'] as String;
+
+    try {
+      _log('[WORKER][$requestId] start type=$type');
+      final sw = Stopwatch()..start();
+      Map<String, Object?> response;
+
+      switch (type) {
+        case 'load':
+          await _handleLoad(request);
+          response = {'requestId': requestId, 'success': true};
+          break;
+        case 'generateRag':
+          response = await _handleGenerateRag(request);
+          response['requestId'] = requestId;
+          break;
+        case 'unload':
+          await _handleUnload();
+          response = {'requestId': requestId, 'success': true};
+          break;
+        default:
+          response = {
+            'requestId': requestId,
+            'error': 'Unknown request type: $type',
+          };
+      }
+
+      sw.stop();
+      _log(
+        '[WORKER][$requestId] done type=$type elapsedMs=${sw.elapsedMilliseconds}',
+      );
+      _mainSendPort.send(response);
+    } catch (e) {
+      _log('[WORKER][$requestId] error type=$type err=$e');
+      _mainSendPort.send({'requestId': requestId, 'error': e.toString()});
+    }
+  }
+
+  /// モデルをロード
+  Future<void> _handleLoad(Map<String, Object?> request) async {
+    final llmModelPath = request['llmModelPath'] as String;
+    final embeddingModelPath = request['embeddingModelPath'] as String;
+    final knowledgeDbDir = request['knowledgeDbDir'] as String;
+
+    // 既存のモデルがあれば解放
+    await _handleUnload();
+
+    // LLMモデルをロード
+    _log('[WORKER] loading llm: $llmModelPath');
+    _llmModel = await LlamaModel.load(llmModelPath);
+
+    // Embeddingモデルをロード
+    _log('[WORKER] loading embedding: $embeddingModelPath');
+    _embeddingModel = await LlamaEmbeddingModel.load(embeddingModelPath);
+
+    // Embedding次元チェック
+    if (_embeddingModel!.embeddingDim != 768) {
+      await _handleUnload();
+      throw Exception(
+        'Embedding次元が一致しません。期待値: 768, 実際: ${_embeddingModel!.embeddingDim}',
+      );
+    }
+
+    // ObjectBox Storeを開く
+    _log('[WORKER] opening objectbox store: $knowledgeDbDir');
+    _store = await openStore(directory: knowledgeDbDir);
+    _knowledgeBox = Box<Knowledge>(_store!);
+    _log('[WORKER] load completed');
+  }
+
+  /// RAGで応答を生成
+  Future<Map<String, Object?>> _handleGenerateRag(
+    Map<String, Object?> request,
+  ) async {
+    if (_llmModel == null || _embeddingModel == null || _knowledgeBox == null) {
+      throw StateError('Models not loaded');
+    }
+
+    final userText = request['userText'] as String;
+    final history =
+        (request['history'] as List<dynamic>?)
+            ?.map((e) => e as Map<String, String>)
+            .toList() ??
+        [];
+    final k = request['k'] as int? ?? 3;
+    final maxTokens = request['maxTokens'] as int? ?? 256;
+
+    // 1. 埋め込み生成
+    final swEmbed = Stopwatch()..start();
+    _log('[WORKER] embed start len=${userText.length}');
+    final embedding = await _embeddingModel!.embed(userText);
+    swEmbed.stop();
+    _log(
+      '[WORKER] embed done ms=${swEmbed.elapsedMilliseconds} dim=${embedding.length}',
+    );
+
+    // 2. ベクトル検索
+    final swSearch = Stopwatch()..start();
+    _log('[WORKER] search start k=$k');
+    final q = _knowledgeBox!
+        .query(Knowledge_.embedding.nearestNeighborsF32(embedding, k))
+        .build();
+    final searchResults = q.findWithScores();
+    q.close();
+    swSearch.stop();
+    _log(
+      '[WORKER] search done ms=${swSearch.elapsedMilliseconds} hits=${searchResults.length}',
+    );
+
+    // 3. RAGプロンプトを構築
+    final prompt = _buildRagPrompt(userText, history, searchResults);
+
+    // 4. テキスト生成
+    final swGen = Stopwatch()..start();
+    _log(
+      '[WORKER] generate start maxTokens=$maxTokens promptLen=${prompt.length}',
+    );
+    final replyText = await _llmModel!.generate(prompt, maxTokens: maxTokens);
+    swGen.stop();
+    _log(
+      '[WORKER] generate done ms=${swGen.elapsedMilliseconds} replyLen=${replyText.length}',
+    );
+
+    // 5. 結果を返す
+    final contexts = searchResults.map((r) => r.object.text).toList();
+    final scores = searchResults.map((r) => r.score).toList();
+
+    return {'replyText': replyText, 'contexts': contexts, 'scores': scores};
+  }
+
+  /// RAGプロンプトを構築
+  String _buildRagPrompt(
+    String userText,
+    List<Map<String, String>> history,
+    List<ObjectWithScore<Knowledge>> searchResults,
+  ) {
+    final buffer = StringBuffer();
+
+    // コンテキスト
+    buffer.writeln('### 関連情報（コンテキスト）');
+    buffer.writeln('以下の内容が会話の中で必要な情報である場合にはその内容を利用して応答を生成してください。');
+    if (searchResults.isEmpty) {
+      buffer.writeln('（関連情報なし）');
+    } else {
+      for (final result in searchResults) {
+        buffer.writeln('- ${result.object.text}');
+      }
+    }
+    buffer.writeln();
+
+    // 会話履歴
+    buffer.writeln('### 会話履歴');
+    if (history.isEmpty) {
+      buffer.writeln('（会話履歴なし）');
+    } else {
+      for (final chat in history) {
+        final role = chat['role'] == 'user' ? 'ユーザー' : 'アシスタント';
+        buffer.writeln('$role: ${chat['content']}');
+      }
+    }
+    buffer.writeln();
+
+    // ユーザー入力
+    buffer.writeln('### ユーザー入力');
+    buffer.writeln('関連情報と会話履歴を踏まえてユーザ入力に対しての応答を考えてください。');
+    buffer.writeln(userText);
+
+    buffer.writeln('### 制約事項');
+    buffer.writeln('以下の制約事項に従って応答を生成してください。');
+    buffer.writeln('・ユーザーの入力に対しての応答を生成し、その応答のみを返答してください');
+
+    return buffer.toString();
+  }
+
+  /// モデルをアンロード
+  Future<void> _handleUnload() async {
+    try {
+      _log('[WORKER] unload start');
+      await _llmModel?.dispose();
+      await _embeddingModel?.dispose();
+      _store?.close();
+    } catch (e) {
+      // エラーは無視（既に解放済みの可能性）
+      print('Warning: Error during unload: $e');
+    } finally {
+      _llmModel = null;
+      _embeddingModel = null;
+      _store = null;
+      _knowledgeBox = null;
+      _log('[WORKER] unload done');
+    }
+  }
+}
+
+void _log(String message) {
+  // isolate上でも確実に出る簡易ログ
+  // ignore: avoid_print
+  print('[LLM_WORKER] $message');
+}

@@ -16,6 +16,7 @@ dependencies:
   path_provider: ^2.1.5
   objectbox: ^5.0.3
   objectbox_flutter_libs: ^5.0.3
+  signals: ^6.3.0
 
 dev_dependencies:
   flutter_test:

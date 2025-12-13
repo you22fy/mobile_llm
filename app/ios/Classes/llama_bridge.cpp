@@ -84,9 +84,7 @@ llama_load_model(const char *model_path, int32_t is_embedding)
     }
     else
     {
-        // 生成ではプロンプト＋生成トークン数を収容できるだけのコンテキスト長が必要。
-        // n_ctx が小さすぎると decode が失敗したり、実装によってはabortする可能性がある。
-        ctx_params.n_ctx = 2048;
+        ctx_params.n_ctx = 8192;
         ctx_params.n_batch = 256;
         ctx_params.n_ubatch = 256;
         ctx_params.n_threads = 8;

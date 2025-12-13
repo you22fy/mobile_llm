@@ -204,6 +204,64 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  /// 知識を追加
+  Future<void> _addKnowledge() async {
+    if (!isInitialized || _isGenerating || _state != HomePageState.chatting) {
+      return;
+    }
+
+    // 直近のユーザーメッセージを取得（なければ現在の入力フィールドのテキストを使用）
+    String? userText;
+    for (int i = chats.length - 1; i >= 0; i--) {
+      if (chats[i].prompt == 'user') {
+        userText = chats[i].message;
+        break;
+      }
+    }
+    userText ??= inputController.text.trim();
+
+    if (userText.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ユーザーメッセージが見つかりません')));
+      }
+      return;
+    }
+
+    try {
+      setState(() {
+        _isGenerating = true;
+      });
+
+      final result = await _workerClient.addKnowledgeFromUserText(
+        userText: userText,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('知識を追加しました: ${result['savedText']}'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error adding knowledge: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('知識の追加に失敗しました: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
+    }
+  }
+
   /// チャット履歴をリセット（全削除）
   Future<void> _resetChatHistory() async {
     if (!isInitialized || _isGenerating) return;
@@ -325,6 +383,11 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
         actions: _state == HomePageState.chatting
             ? [
+                IconButton(
+                  icon: const Icon(Icons.lightbulb_outline),
+                  onPressed: _isGenerating ? null : _addKnowledge,
+                  tooltip: '知識追加',
+                ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: _isGenerating ? null : _resetChatHistory,
@@ -505,42 +568,44 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ],
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: inputController,
-                  decoration: const InputDecoration(
-                    hintText: 'メッセージを入力...',
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 16.0,
-                      vertical: 12.0,
+          child: SafeArea(
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: inputController,
+                    decoration: const InputDecoration(
+                      hintText: 'メッセージを入力...',
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 16.0,
+                        vertical: 12.0,
+                      ),
                     ),
+                    onSubmitted: (_) => _sendMessage(),
                   ),
-                  onSubmitted: (_) => _sendMessage(),
                 ),
-              ),
-              const SizedBox(width: 8.0),
-              IconButton(
-                icon: _isGenerating
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.send),
-                onPressed: _isGenerating ? null : _sendMessage,
-                style: IconButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  padding: const EdgeInsets.all(16.0),
+                const SizedBox(width: 8.0),
+                IconButton(
+                  icon: _isGenerating
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send),
+                  onPressed: _isGenerating ? null : _sendMessage,
+                  style: IconButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    padding: const EdgeInsets.all(16.0),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ],

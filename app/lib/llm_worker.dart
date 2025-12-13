@@ -147,6 +147,25 @@ class LlmWorkerClient {
     }
   }
 
+  /// ユーザー入力から知識を生成して追加
+  Future<Map<String, Object?>> addKnowledgeFromUserText({
+    required String userText,
+  }) async {
+    final response = await _sendRequest({
+      'type': 'addKnowledgeFromUserText',
+      'userText': userText,
+    });
+
+    if (response['error'] != null) {
+      throw Exception(response['error']);
+    }
+
+    return {
+      'savedText': response['savedText'] as String,
+      'id': response['id'] as int,
+    };
+  }
+
   /// リクエストを送信して応答を待つ
   Future<Map<String, Object?>> _sendRequest(Map<String, Object?> request) {
     if (_isStopped) {
@@ -167,7 +186,7 @@ class LlmWorkerClient {
 
     // ネイティブクラッシュ等で応答が返らないケースがあるためタイムアウトを付ける
     return completer.future.timeout(
-      const Duration(seconds: 120),
+      const Duration(seconds: 30),
       onTimeout: () {
         _pendingRequests.remove(requestId);
         throw TimeoutException('Worker request timed out: ${request['type']}');
@@ -264,6 +283,10 @@ class _LlmWorker {
           response = await _handleGenerateRag(request);
           response['requestId'] = requestId;
           break;
+        case 'addKnowledgeFromUserText':
+          response = await _handleAddKnowledgeFromUserText(request);
+          response['requestId'] = requestId;
+          break;
         case 'unload':
           await _handleUnload();
           response = {'requestId': requestId, 'success': true};
@@ -316,6 +339,9 @@ class _LlmWorker {
     _store = await openStore(directory: knowledgeDbDir);
     _knowledgeBox = Box<Knowledge>(_store!);
     _log('[WORKER] load completed');
+
+    // 事前知識を10件追加
+    await _seedKnowledge();
   }
 
   /// RAGで応答を生成
@@ -359,6 +385,7 @@ class _LlmWorker {
 
     // 3. RAGプロンプトを構築
     final prompt = _buildRagPrompt(userText, history, searchResults);
+    _log('[WORKER] prompt: $prompt');
 
     // 4. テキスト生成
     final swGen = Stopwatch()..start();
@@ -378,6 +405,67 @@ class _LlmWorker {
     return {'replyText': replyText, 'contexts': contexts, 'scores': scores};
   }
 
+  /// ユーザー入力から知識を生成して追加
+  Future<Map<String, Object?>> _handleAddKnowledgeFromUserText(
+    Map<String, Object?> request,
+  ) async {
+    if (_llmModel == null || _embeddingModel == null || _knowledgeBox == null) {
+      throw StateError('Models not loaded');
+    }
+
+    final userText = request['userText'] as String;
+
+    // 1. LLMで知識文を生成
+    final swGen = Stopwatch()..start();
+    _log('[WORKER] generating knowledge text from: $userText');
+    final knowledgePrompt = _buildKnowledgeGenerationPrompt(userText);
+    final knowledgeText = await _llmModel!.generate(
+      knowledgePrompt,
+      maxTokens: 128,
+    );
+    swGen.stop();
+    _log(
+      '[WORKER] knowledge text generated ms=${swGen.elapsedMilliseconds} text=$knowledgeText',
+    );
+
+    // 2. 知識文をembedding
+    final swEmbed = Stopwatch()..start();
+    final embedding = await _embeddingModel!.embed(knowledgeText);
+    swEmbed.stop();
+    _log(
+      '[WORKER] knowledge embedded ms=${swEmbed.elapsedMilliseconds} dim=${embedding.length}',
+    );
+
+    // 3. Knowledgeオブジェクトを作成して保存
+    final knowledge = Knowledge(
+      id: 0, // ObjectBoxが自動採番
+      text: knowledgeText,
+      embedding: embedding,
+    );
+    _knowledgeBox!.put(knowledge);
+    _log('[WORKER] knowledge saved id=${knowledge.id}');
+
+    return {'savedText': knowledgeText, 'id': knowledge.id};
+  }
+
+  /// 知識生成用プロンプトを構築
+  String _buildKnowledgeGenerationPrompt(String userText) {
+    final buffer = StringBuffer();
+    buffer.writeln('## タスク');
+    buffer.writeln('ユーザーの入力から、知識として保存すべき要点を1〜2文で簡潔にまとめてください。');
+    buffer.writeln();
+    buffer.writeln('## ユーザー入力');
+    buffer.writeln(userText);
+    buffer.writeln();
+    buffer.writeln('## 制約事項');
+    buffer.writeln('・知識として保存する価値のある要点を抽出してください');
+    buffer.writeln('・1〜2文で簡潔にまとめてください');
+    buffer.writeln('・知識文のみを出力し、それ以外のメタ情報は一切出力しないでください');
+    buffer.writeln();
+    buffer.writeln('## 知識文');
+    return buffer.toString();
+  }
+
   /// RAGプロンプトを構築
   String _buildRagPrompt(
     String userText,
@@ -385,41 +473,81 @@ class _LlmWorker {
     List<ObjectWithScore<Knowledge>> searchResults,
   ) {
     final buffer = StringBuffer();
+    // ユーザー入力
+    buffer.writeln('User input:');
+    buffer.writeln(userText);
 
-    // コンテキスト
-    buffer.writeln('### 関連情報（コンテキスト）');
-    buffer.writeln('以下の内容が会話の中で必要な情報である場合にはその内容を利用して応答を生成してください。');
-    if (searchResults.isEmpty) {
-      buffer.writeln('（関連情報なし）');
-    } else {
+    // 会話履歴
+    buffer.writeln('Conversation history:');
+    if (history.isNotEmpty) {
+      for (final chat in history) {
+        final role = chat['role'] == 'user' ? 'ユーザー' : 'アシスタント';
+        buffer.writeln('$role: 「${chat['content']}」');
+      }
+    }
+    buffer.writeln();
+
+    buffer.writeln('# Constraints:');
+    buffer.writeln('1. Generate a response only for the user input.');
+    buffer.writeln('2. Generate only the response text, no other metadata.');
+    buffer.writeln('3. Do not generate any other information.');
+    buffer.writeln('4. You must response in Japanese.');
+    buffer.writeln(
+      '5. If the following information is needed in the conversation, use it to generate the response.',
+    );
+    if (searchResults.isNotEmpty) {
       for (final result in searchResults) {
         buffer.writeln('- ${result.object.text}');
       }
     }
-    buffer.writeln();
 
-    // 会話履歴
-    buffer.writeln('### 会話履歴');
-    if (history.isEmpty) {
-      buffer.writeln('（会話履歴なし）');
-    } else {
-      for (final chat in history) {
-        final role = chat['role'] == 'user' ? 'ユーザー' : 'アシスタント';
-        buffer.writeln('$role: ${chat['content']}');
-      }
-    }
-    buffer.writeln();
-
-    // ユーザー入力
-    buffer.writeln('### ユーザー入力');
-    buffer.writeln('関連情報と会話履歴を踏まえてユーザ入力に対しての応答を考えてください。');
-    buffer.writeln(userText);
-
-    buffer.writeln('### 制約事項');
-    buffer.writeln('以下の制約事項に従って応答を生成してください。');
-    buffer.writeln('・ユーザーの入力に対しての応答を生成し、その応答のみを返答してください');
+    buffer.writeln('Response:');
 
     return buffer.toString();
+  }
+
+  /// 事前知識を10件追加
+  Future<void> _seedKnowledge() async {
+    if (_embeddingModel == null || _knowledgeBox == null) {
+      throw StateError('Models not loaded');
+    }
+
+    _log('[WORKER] seeding knowledge start');
+    final sw = Stopwatch()..start();
+
+    // 固定10件の知識テキスト
+    final knowledgeTexts = [
+      'FlutterはGoogleが開発したモバイルアプリケーション開発フレームワークです。',
+      'DartはFlutterで使用されるプログラミング言語で、オブジェクト指向言語です。',
+      'ObjectBoxは高速なオブジェクトデータベースで、モバイルアプリに適しています。',
+      'RAG（Retrieval-Augmented Generation）は検索と生成を組み合わせたAI技術です。',
+      'ベクトル検索は意味的に類似した文書を見つけるための技術です。',
+      '埋め込み（Embedding）はテキストを数値ベクトルに変換する技術です。',
+      'LLM（Large Language Model）は大規模な言語モデルで、テキスト生成が可能です。',
+      'IsolateはDartで並行処理を実現するための軽量スレッドです。',
+      'ネイティブコードはプラットフォーム固有のコードで、高速な処理が可能です。',
+      'モバイルアプリ開発では、パフォーマンスとユーザー体験が重要です。',
+    ];
+
+    // 各テキストをembeddingしてKnowledgeオブジェクトを作成
+    final knowledgeList = <Knowledge>[];
+    for (final text in knowledgeTexts) {
+      final embedding = await _embeddingModel!.embed(text);
+      knowledgeList.add(
+        Knowledge(
+          id: 0, // ObjectBoxが自動採番
+          text: text,
+          embedding: embedding,
+        ),
+      );
+    }
+
+    // 一括保存
+    _knowledgeBox!.putMany(knowledgeList);
+    sw.stop();
+    _log(
+      '[WORKER] seeding knowledge done ms=${sw.elapsedMilliseconds} count=${knowledgeList.length}',
+    );
   }
 
   /// モデルをアンロード

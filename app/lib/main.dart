@@ -262,6 +262,44 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  /// ベース知識を挿入
+  Future<void> _seedBaseKnowledge() async {
+    if (!isInitialized || _isGenerating || _state != HomePageState.chatting) {
+      return;
+    }
+
+    try {
+      setState(() {
+        _isGenerating = true;
+      });
+
+      final result = await _workerClient.seedBaseKnowledge();
+      final count = result['count'] as int;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('ベース知識を${count}件追加しました'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error seeding base knowledge: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('ベース知識の挿入に失敗しました: $e')));
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
+    }
+  }
+
   /// AI応答の詳細（prompt/references）をBottomSheetで表示
   void _showChatDetailsBottomSheet(BuildContext context, Chat chat) {
     showModalBottomSheet(
@@ -554,6 +592,11 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
         actions: _state == HomePageState.chatting
             ? [
+                IconButton(
+                  icon: const Icon(Icons.auto_awesome),
+                  onPressed: _isGenerating ? null : _seedBaseKnowledge,
+                  tooltip: 'ベース知識挿入',
+                ),
                 IconButton(
                   icon: const Icon(Icons.lightbulb_outline),
                   onPressed: _isGenerating ? null : _addKnowledge,

@@ -167,6 +167,17 @@ class LlmWorkerClient {
     };
   }
 
+  /// ベース知識を挿入
+  Future<Map<String, Object?>> seedBaseKnowledge() async {
+    final response = await _sendRequest({'type': 'seedBaseKnowledge'});
+
+    if (response['error'] != null) {
+      throw Exception(response['error']);
+    }
+
+    return {'count': response['count'] as int};
+  }
+
   /// リクエストを送信して応答を待つ
   Future<Map<String, Object?>> _sendRequest(Map<String, Object?> request) {
     if (_isStopped) {
@@ -292,6 +303,10 @@ class _LlmWorker {
           await _handleUnload();
           response = {'requestId': requestId, 'success': true};
           break;
+        case 'seedBaseKnowledge':
+          response = await _handleSeedBaseKnowledge();
+          response['requestId'] = requestId;
+          break;
         default:
           response = {
             'requestId': requestId,
@@ -340,9 +355,6 @@ class _LlmWorker {
     _store = await openStore(directory: knowledgeDbDir);
     _knowledgeBox = Box<Knowledge>(_store!);
     _log('[WORKER] load completed');
-
-    // 事前知識を10件追加
-    await _seedKnowledge();
   }
 
   /// RAGで応答を生成
@@ -512,8 +524,18 @@ class _LlmWorker {
     return buffer.toString();
   }
 
+  /// ベース知識を挿入
+  Future<Map<String, Object?>> _handleSeedBaseKnowledge() async {
+    if (_embeddingModel == null || _knowledgeBox == null) {
+      throw StateError('Models not loaded');
+    }
+
+    final count = await _seedKnowledge();
+    return {'success': true, 'count': count};
+  }
+
   /// 事前知識を10件追加
-  Future<void> _seedKnowledge() async {
+  Future<int> _seedKnowledge() async {
     if (_embeddingModel == null || _knowledgeBox == null) {
       throw StateError('Models not loaded');
     }
@@ -554,6 +576,7 @@ class _LlmWorker {
     _log(
       '[WORKER] seeding knowledge done ms=${sw.elapsedMilliseconds} count=${knowledgeList.length}',
     );
+    return knowledgeList.length;
   }
 
   /// モデルをアンロード
